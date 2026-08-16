@@ -1,0 +1,51 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,props,targets,csproj}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Usings
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:warning
+
+# Modern C# — file-scoped namespaces keep one level of indentation off every file
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_prefer_braces = true:suggestion
+
+# 'var' only where the type is apparent on the right-hand side
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# Naming
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# Correctness rules the platform relies on
+dotnet_diagnostic.CA2007.severity = none      # library code has no sync context to capture
+dotnet_diagnostic.CA1848.severity = suggestion # LoggerMessage — enforced by convention, phased in
+dotnet_diagnostic.CA1062.severity = warning    # validate public arguments
+dotnet_diagnostic.CA2100.severity = error      # SQL injection review
+dotnet_diagnostic.CA3075.severity = error      # insecure DTD processing
+dotnet_diagnostic.CA5350.severity = error      # weak crypto
+dotnet_diagnostic.CA5351.severity = error      # broken crypto
+dotnet_diagnostic.CA5394.severity = error      # insecure randomness
+dotnet_diagnostic.IDE0005.severity = warning   # unnecessary usings

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Pins the whole transitive graph so a build today restores exactly what a build last month
+         did. CI restores with locked mode, which fails rather than silently resolving a
+         different version. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- netstandard2.0 is mandatory: an analyzer is loaded into the compiler process, not the
+         application, and Roslyn only loads netstandard2.0 analyzer assemblies. This is the reason
+         the analyzers cannot live inside the MicroFx project. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>true</IsPackable>
+    <PackageId>MicroFx.Analyzers</PackageId>
+    <Description>Roslyn analyzers enforcing MicroFx conventions at compile time.</Description>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+  <!-- Release tracking turns a new or changed rule into a reviewed diff rather than a surprise
+       build break for every consumer who takes the next version. -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+</Project>

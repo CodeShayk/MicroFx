@@ -1,0 +1,90 @@
+# Local stack for the reference host.
+#
+# None of this is required to run or test the service: the in-box defaults mean
+# `dotnet run --project src/MicroFx.Host.Service` works with nothing else installed.
+# This stack exists to exercise the production adapters — RabbitMQ, PostgreSQL, and a
+# collector — against the real container image.
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+
+services:
+  host-service:
+    build:
+      context: ..
+      dockerfile: src/MicroFx.Host.Service/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      MicroFx__Service__Name: microfx-host-service
+      MicroFx__Observability__OtlpEndpoint: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+
+      ConnectionStrings__Orders: "Host=postgres;Database=orders;Username=microfx;Password=devonly"
+      MicroFx__Persistence__CreateSchemaOnStartup: "true"
+
+      # Plaintext AMQP and classic queues are acceptable only because this is a throwaway local
+      # broker. Startup validation refuses both outside Development.
+      MicroFx__Messaging__RabbitMq__Uri: "amqp://guest:guest@rabbitmq:5672/"
+      MicroFx__Messaging__RabbitMq__AllowInsecureTransport: "true"
+      MicroFx__Messaging__RabbitMq__UseQuorumQueues: "false"
+    ports:
+      # 8080 is the traffic port. 8081 is management and is deliberately NOT published:
+      # health, diagnostics, and the API reference stay on the compose network.
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      # Probed from inside the container, since the management port is not published. The
+      # chiselled image has no shell, so the binary probes itself.
+      test: ["CMD", "/app/MicroFx.Host.Service", "--health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: microfx
+      # Local development only. A real deployment uses IAM authentication or a secret store.
+      POSTGRES_PASSWORD: devonly
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microfx -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      - "15672:15672"   # management UI; the AMQP port stays on the compose network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true

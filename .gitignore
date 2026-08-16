@@ -396,3 +396,9 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Local SQLite databases created by the reference host's zero-configuration default.
+# The schema is created on startup, so nothing here is worth version-controlling.
+*.db
+*.db-shm
+*.db-wal

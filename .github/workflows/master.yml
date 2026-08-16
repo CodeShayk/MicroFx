@@ -1,26 +1,90 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
-
-name: Buid Master
+name: Build Master
 
 on:
   push:
     branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 6.0.x
-    - name: Restore dependencies
-      run: dotnet restore
+        global-json-file: global.json
+
+    # Locked mode fails rather than silently resolving a different version than the lock file
+    # records. A build that quietly drifts its dependency graph is not reproducible.
+    - name: Restore
+      run: dotnet restore --locked-mode
+
     - name: Build
-      run: dotnet build --no-restore
+      run: dotnet build --no-restore --configuration Release
+
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+
+    # The core must build and test with no cloud SDK on its graph. Asserted rather than assumed,
+    # because a transitive reference is easy to acquire and invisible until someone looks.
+    - name: Assert cloud-neutral core
+      run: |
+        if dotnet list src/MicroFx/MicroFx.csproj package --include-transitive \
+             | grep -Ei '\b(AWSSDK|Azure\.|Google\.Cloud)'; then
+          echo "::error::A cloud SDK reached the MicroFx core dependency graph."
+          exit 1
+        fi
+        echo "Core is cloud-neutral."
+
+    # The adapter exists to keep RabbitMQ.Client off the graph of every service that does not use
+    # messaging. If it leaked into the core, that separation would have bought nothing.
+    - name: Assert transport isolation
+      run: |
+        if dotnet list src/MicroFx/MicroFx.csproj package --include-transitive \
+             | grep -Ei 'RabbitMQ\.Client'; then
+          echo "::error::RabbitMQ.Client reached the MicroFx core dependency graph."
+          exit 1
+        fi
+        echo "Transport is isolated to its adapter."
+
+    - name: Build the reference container
+      run: docker build -f src/MicroFx.Host.Service/Dockerfile -t microfx-host-service:ci .
+
+  # Runs the messaging suite against a real broker. The in-process lane proves the semantics; this
+  # proves the adapter honours the capabilities it advertises.
+  broker-conformance:
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: rabbitmq:4-management-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_running"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+
+    - name: Restore
+      run: dotnet restore --locked-mode
+
+    - name: Transport conformance against RabbitMQ
+      env:
+        MICROFX_RABBITMQ_URI: amqp://guest:guest@localhost:5672/
+      run: dotnet test test/MicroFx.Messaging.RabbitMq.Tests --configuration Release

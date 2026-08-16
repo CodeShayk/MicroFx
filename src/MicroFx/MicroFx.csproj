@@ -1,8 +1,56 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
-    <Nullable>enable</Nullable>
+    <!-- Pins the whole transitive graph so a build today restores exactly what a build last month
+         did. CI restores with locked mode, which fails rather than silently resolving a
+         different version. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <IsPackable>true</IsPackable>
+    <PackageId>MicroFx</PackageId>
+    <Description>Application framework for building cloud-native .NET microservices: a feature-based composition kernel plus built-in cross-cutting capabilities.</Description>
+    <PackageTags>microservice;framework;clean-architecture;opentelemetry;messaging</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <!-- ASP.NET Core types are required by the HTTP-facing facets. The framework reference is
+       compile-time only for non-web hosts; a worker never activates those code paths. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Hosting, configuration binding, health checks, and options validation all arrive with the
+       framework reference above; referencing them as packages would only pin older copies. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyModel" />
+    <PackageReference Include="Asp.Versioning.Http" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Cronos" />
+    <PackageReference Include="OpenFeature" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicroFx.Tests" />
+  </ItemGroup>
+
+  <!-- Shipped as an analyzer asset, so one package reference delivers the rules. OutputItemType
+       Analyzer means consumers get the diagnostics; ReferenceOutputAssembly false keeps the
+       netstandard2.0 analyzer off the runtime graph. -->
+  <ItemGroup>
+    <ProjectReference Include="..\MicroFx.Analyzers\MicroFx.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
 
 </Project>

@@ -1,0 +1,2 @@
+
+Create a .net microservice template, with platform capability covering all the necessary cross cutting functionalities. Include the common plumbing capabilities required for a cloud native microservice. Tech stack is .net and aws

@@ -1,0 +1,28 @@
+<Project>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Required for IDE0005 (unnecessary usings) to run during build. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Test types are internal by design; XML docs on them would be noise. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Rules that earn their keep in shipping code but only add ceremony in tests.
+       Scoped to the test tree so the platform itself stays held to the stricter bar. -->
+  <PropertyGroup>
+    <!-- CA1861: hoisting literal arrays to static fields obscures what a test asserts. -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+    <!-- CA5394: Random is used to shuffle inputs for determinism checks, never for security. -->
+    <NoWarn>$(NoWarn);CA5394</NoWarn>
+    <!-- CA1707: underscores in test names are the convention that makes failures readable. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <!-- CA1859: tests exercise the interface deliberately, because that is what consumers use.
+         Narrowing to the concrete type would test a surface nobody depends on. -->
+    <NoWarn>$(NoWarn);CA1859</NoWarn>
+  </PropertyGroup>
+
+</Project>

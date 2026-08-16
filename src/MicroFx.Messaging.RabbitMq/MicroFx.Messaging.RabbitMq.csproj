@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Pins the whole transitive graph so a build today restores exactly what a build last month
+         did. CI restores with locked mode, which fails rather than silently resolving a
+         different version. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <IsPackable>true</IsPackable>
+    <PackageId>MicroFx.Messaging.RabbitMq</PackageId>
+    <Description>RabbitMQ transport adapter for MicroFx. Implements IMessageTransport and its facets; isolates RabbitMQ.Client from services that do not use it.</Description>
+    <PackageTags>microfx;messaging;rabbitmq;amqp</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MicroFx\MicroFx.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicroFx.Messaging.RabbitMq.Tests" />
+  </ItemGroup>
+
+</Project>
