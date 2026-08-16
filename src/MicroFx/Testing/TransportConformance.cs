@@ -377,15 +377,36 @@ public sealed class TransportConformanceSuite(IMessageTransport transport, TimeP
 
     // ---- Helpers ---------------------------------------------------------------------------------
 
-    private Task<ITransportSubscription> SubscribeAsync(
+    /// <summary>Provisions the topology for one subscription, then subscribes to it.</summary>
+    /// <remarks>
+    /// The provisioning step is not incidental. A broker-backed transport does not create
+    /// destinations on demand — that is the whole point of the topology facet, which keeps
+    /// application code from quietly declaring drifted infrastructure. Subscribing to a destination
+    /// that was never declared fails outright on a real broker, while an in-memory transport
+    /// conjures it silently. A suite that skipped this step would therefore pass in-memory and fail
+    /// against every broker it exists to certify.
+    /// </remarks>
+    private async Task<ITransportSubscription> SubscribeAsync(
         MessageDestination destination,
         string consumerGroup,
         Func<TransportDelivery, DeliveryOutcome> handler,
-        CancellationToken cancellationToken) =>
-        transport.SubscribeAsync(
-            new SubscriptionSpec { ConsumerGroup = consumerGroup, Source = destination },
+        CancellationToken cancellationToken)
+    {
+        var specification = new SubscriptionSpec { ConsumerGroup = consumerGroup, Source = destination };
+
+        if (transport is ITransportTopologyProvisioner provisioner)
+        {
+            await provisioner.AssertAsync(
+                new TopologyManifest([destination], [specification]),
+                TopologyMode.Provision,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await transport.SubscribeAsync(
+            specification,
             (delivery, _) => Task.FromResult(handler(delivery)),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private static MessageDestination NewDestination(string name) =>
         new(DestinationKind.Event, "conformance", $"{name}.{Guid.NewGuid():N}"[..24]);

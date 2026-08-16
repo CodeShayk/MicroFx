@@ -173,9 +173,21 @@ This section is the one to read before deploying anything.
 
 CI contains a `broker-conformance` job with a RabbitMQ service container that will run the suite on the first push. **Treat the adapter as unproven until that job is green.**
 
+#### First CI run — two defects found, fixed, still unverified locally
+
+The first `broker-conformance` run failed exactly where this section predicted, and the failure was real rather than environmental:
+
+1. **The conformance suite never provisioned the topology it used.** It invents destinations and consumer groups at run time and subscribed to them directly. The in-memory transport conjures a destination on first use, so the suite passed there; a broker does not, and every subscribe returned `404 NOT_FOUND — no queue`. The suite now provisions each destination and subscription through `ITransportTopologyProvisioner` before subscribing, which also means it now exercises the topology facet rather than only the messaging one. This was a defect in the *suite*, and it had been masking itself: a certification suite that only ever passed against the transport that needs no certification.
+
+2. **`ScheduleAsync` could not express a delayed publish.** It required a `microfx-target-queue` header and threw without one. That header exists for a *redelivery*, which must return to one consumer group's queue. A delayed publish has not reached anyone yet and must fan out to every subscriber when it matures — so it now waits in a per-destination holding queue whose dead-letter settings expire it onto the destination's exchange, with `x-dead-letter-routing-key` set explicitly because dead-lettering otherwise preserves the holding queue's own name as the key and the message would land in the unroutable queue.
+
+Both fixes are **compiled and reviewed but not executed** — Docker remained unavailable, so the 256 local tests still exercise only the in-memory path. The same caveat as above applies unchanged: treat the adapter as unproven until `broker-conformance` is green.
+
 ### The container image has never been built
 
-The Dockerfile and compose stack are written and reviewed; `docker build` has never run. The CI workflow now builds the image, so this resolves on first push.
+The Dockerfile and compose stack are written and reviewed; `docker build` has never run locally.
+
+The first CI run failed here too, and the cause is worth recording because it fails quietly: the restore layer copied every project manifest **except** the analyzer's. NuGet does not treat a missing project as an error — it logs `Skipping project ... because it was not found` and carries on, producing an incomplete assets file that only fails later, during publish, as an unrelated-looking missing-package error. The layer now copies all three manifests and their lock files, and restores with `--locked-mode` so the image is built from exactly the dependency graph CI reviewed.
 
 ### The containerised e2e lane does not exist
 

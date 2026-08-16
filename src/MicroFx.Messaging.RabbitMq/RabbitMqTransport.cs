@@ -110,31 +110,47 @@ public sealed partial class RabbitMqTransport : IMessageTransport, ITransportTop
             return;
         }
 
-        // The target queue must be known to route the message back on expiry. The core supplies it
-        // in a header when it schedules a redelivery.
-        if (!message.Headers.TryGetValue(TargetQueueHeader, out var targetQueue) ||
-            string.IsNullOrEmpty(targetQueue))
-        {
-            throw new InvalidOperationException(
-                $"A scheduled message must carry the '{TargetQueueHeader}' header naming the queue " +
-                "it returns to. Without it the rung has nowhere to dead-letter the message.");
-        }
-
         var rung = _mapper.SelectRung(delay);
 
-        await PublishCoreAsync(
-            _mapper.RetryExchangeFor(rung),
+        // Two callers, two shapes. A redelivery names the single consumer queue it came from, and
+        // must return only there. A delayed publish names nothing, has never been delivered, and
+        // must fan out to every subscriber when it matures — so it waits in a per-destination
+        // holding queue that expires to the destination's exchange instead.
+        if (message.Headers.TryGetValue(TargetQueueHeader, out var targetQueue) &&
+            !string.IsNullOrEmpty(targetQueue))
+        {
+            await PublishCoreAsync(
+                _mapper.RetryExchangeFor(rung),
 
-            // The routing key the message will carry out of the rung on expiry.
-            targetQueue,
+                // The routing key the message will carry out of the rung on expiry.
+                targetQueue,
+                message,
+
+                // Not mandatory: the fanout rung has exactly one binding, and an unroutable return
+                // here would be a topology defect the provisioner already asserts against.
+                mandatory: false,
+                cancellationToken).ConfigureAwait(false);
+
+            LogScheduled(_logger, targetQueue, rung.TotalSeconds);
+            return;
+        }
+
+        var delayQueue = _mapper.DelayQueueFor(message.Destination, rung);
+
+        await PublishCoreAsync(
+            // The default exchange, which routes by queue name. The queue's own dead-letter
+            // settings put the message on the destination exchange when the TTL expires.
+            exchange: string.Empty,
+            delayQueue,
             message,
 
-            // Not mandatory: the fanout rung has exactly one binding, and an unroutable return here
-            // would be a topology defect the provisioner already asserts against.
-            mandatory: false,
+            // Mandatory: if the holding queue does not exist the message is returned rather than
+            // dropped, and a scheduled publish that silently vanished would be near-impossible to
+            // diagnose — the send succeeds and the message simply never arrives.
+            mandatory: true,
             cancellationToken).ConfigureAwait(false);
 
-        LogScheduled(_logger, targetQueue, rung.TotalSeconds);
+        LogScheduled(_logger, delayQueue, rung.TotalSeconds);
     }
 
     /// <inheritdoc />
@@ -198,6 +214,13 @@ public sealed partial class RabbitMqTransport : IMessageTransport, ITransportTop
         {
             await AssertExchangeAsync(channel, _mapper.ExchangeFor(destination), cancellationToken)
                 .ConfigureAwait(false);
+
+            foreach (var rung in _options.RetryLadder)
+            {
+                await AssertQueueAsync(
+                    channel, _mapper.DelayQueueFor(destination, rung), cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         foreach (var subscription in manifest.Subscriptions)
@@ -326,6 +349,17 @@ public sealed partial class RabbitMqTransport : IMessageTransport, ITransportTop
                 RabbitMqTopologyMapper.ExchangeTypeFor(destination.Kind),
                 durable: true, autoDelete: false, exchangeArguments,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // One holding queue per rung, so a delayed publish has somewhere to wait that expires
+            // back onto this destination's exchange.
+            foreach (var rung in _options.RetryLadder)
+            {
+                await channel.QueueDeclareAsync(
+                    _mapper.DelayQueueFor(destination, rung),
+                    durable: true, exclusive: false, autoDelete: false,
+                    _mapper.DelayQueueArguments(destination, rung),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
         }
 
         foreach (var subscription in manifest.Subscriptions)

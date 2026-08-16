@@ -71,8 +71,10 @@ internal sealed class RabbitMqConformanceTests
         _transport = new RabbitMqTransport(
             connections, Options.Create(options), TimeProvider.System, NullLoggerFactory.Instance);
 
-        // Development mode: the broker is empty, so the topology has to be created before anything
-        // can be published to it.
+        // Establishes the shared objects — the retry ladder and the unroutable capture queue — that
+        // exist once per broker rather than once per destination. The suite's own destinations are
+        // invented at run time and provision themselves as it goes, which is deliberate: it means
+        // the suite exercises the topology facet as well as the messaging one.
         await _transport.AssertAsync(
             new TopologyManifest([], []), TopologyMode.Provision, CancellationToken.None);
     }

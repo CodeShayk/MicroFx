@@ -75,6 +75,19 @@ internal sealed class RabbitMqTopologyMapper(RabbitMqOptions options)
     public string RetryQueueFor(TimeSpan rung) =>
         Name(options.NamePrefix, "retry", RungToken(rung));
 
+    /// <summary>Holding queue for a message delayed on its way to a destination.</summary>
+    /// <remarks>
+    /// Distinct from <see cref="RetryQueueFor"/>, because the two cases expire to different places.
+    /// A retry returns to <em>one</em> consumer group's queue — only that consumer failed, so
+    /// redelivering to every subscriber would duplicate work that already succeeded. A delayed
+    /// publish has not been delivered to anyone yet and must fan out to <em>all</em> of them on
+    /// expiry, which means expiring to the destination's exchange rather than to a queue. One
+    /// holding queue per destination and rung is what lets the dead-letter settings differ.
+    /// </remarks>
+    public string DelayQueueFor(MessageDestination destination, TimeSpan rung) =>
+        Name(options.NamePrefix, "delay", RungToken(rung), destination.Owner,
+            $"{destination.Name}.{destination.Version}");
+
     /// <summary>Queue receiving messages that matched no binding.</summary>
     /// <remarks>
     /// An unroutable message is always a topology or naming defect, and dropping it silently is how
@@ -141,6 +154,22 @@ internal sealed class RabbitMqTopologyMapper(RabbitMqOptions options)
         // The default exchange, with no dead-letter routing key override, so the message's own
         // routing key — the target queue name — routes it straight back on expiry.
         ["x-dead-letter-exchange"] = string.Empty,
+        ["x-queue-type"] = options.UseQuorumQueues ? "quorum" : "classic",
+    };
+
+    /// <summary>Arguments for a delayed-publish holding queue.</summary>
+    /// <remarks>
+    /// The routing key is overridden explicitly. Dead-lettering preserves the key the message was
+    /// <em>published</em> with, and reaching this queue through the default exchange means that key
+    /// is the queue's own name — which would match no binding on the destination exchange and land
+    /// the message in the unroutable queue instead of being delivered.
+    /// </remarks>
+    public Dictionary<string, object?> DelayQueueArguments(
+        MessageDestination destination, TimeSpan rung) => new(StringComparer.Ordinal)
+    {
+        ["x-message-ttl"] = (long)rung.TotalMilliseconds,
+        ["x-dead-letter-exchange"] = ExchangeFor(destination),
+        ["x-dead-letter-routing-key"] = RoutingKeyFor(destination),
         ["x-queue-type"] = options.UseQuorumQueues ? "quorum" : "classic",
     };
 
